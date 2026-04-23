@@ -105,17 +105,14 @@ function getAudioStream(videoUrl) {
   const ytdlp = spawn("./yt-dlp", [
     "--quiet",
     "--no-warnings",
-
-    // ✅ FIX: bypass bot detection
     "--cookies",
     "cookies.txt",
-
     "--extractor-args",
     "youtube:player_client=android,web,mweb,ios",
 
-    // ✅ FIX: stable format selection
+    // ✅ FIXED FORMAT
     "-f",
-    "bestaudio[ext=m4a]/bestaudio/best",
+    "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
 
     "-o",
     "-",
