@@ -43,9 +43,11 @@ function cleanupFiles() {
   });
 }
 
+
 // ---------------- SAFE YT-DLP STREAM ----------------
 function getAudioStream(videoUrl) {
-  const ytdlp = spawn("yt-dlp", [
+  const ytdlp = spawn("./yt-dlp", [
+    // Added ./ here
     "-x",
     "--audio-format",
     "mp3",
@@ -61,6 +63,11 @@ function getAudioStream(videoUrl) {
 
   const stream = new PassThrough();
   ytdlp.stdout.pipe(stream);
+
+  // CRITICAL: Handle the error event so the bot doesn't crash if it fails
+  ytdlp.on("error", (err) => {
+    console.error("Failed to start yt-dlp process:", err);
+  });
 
   return stream;
 }
