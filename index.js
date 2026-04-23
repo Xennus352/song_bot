@@ -43,19 +43,26 @@ function cleanupFiles() {
   });
 }
 
-
 // ---------------- SAFE YT-DLP STREAM ----------------
 function getAudioStream(videoUrl) {
   const ytdlp = spawn("./yt-dlp", [
-    // Added ./ here
+    "--quiet",
+    "--no-warnings",
+    // 1. IMPERSONATE A BROWSER (Crucial for 2026/Render)
+    "--impersonate",
+    "chrome",
+    // 2. BYPASS CACHE & USE SMALLER CHUNKS
+    "--no-cache-dir",
+    "--buffer-size",
+    "16K",
+    // 3. AUDIO SETTINGS
     "-x",
     "--audio-format",
     "mp3",
     "--audio-quality",
     "0",
     "--no-playlist",
-    "--no-cache-dir",
-    "--no-warnings",
+    // 4. OUTPUT TO STDOUT
     "-o",
     "-",
     videoUrl,
@@ -64,9 +71,13 @@ function getAudioStream(videoUrl) {
   const stream = new PassThrough();
   ytdlp.stdout.pipe(stream);
 
-  // CRITICAL: Handle the error event so the bot doesn't crash if it fails
+  // LOG ERRORS (Check your Render logs to see why it fails)
+  ytdlp.stderr.on("data", (data) => {
+    console.error(`yt-dlp Error: ${data.toString()}`);
+  });
+
   ytdlp.on("error", (err) => {
-    console.error("Failed to start yt-dlp process:", err);
+    console.error("Failed to start yt-dlp:", err);
   });
 
   return stream;
