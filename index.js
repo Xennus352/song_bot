@@ -108,7 +108,7 @@ function getAudioStream(videoUrl) {
 
     // 🔥 FIX FOR BOT DETECTION
     "--extractor-args",
-    "youtube:player_client=android,web",
+    "youtube:player_client=android,web,mweb,ios",
 
     "-f",
     "bestaudio",
