@@ -12,7 +12,65 @@ const fs = require("fs");
 const app = express();
 
 app.get("/", (req, res) => {
-  res.send("🎵 Cecilium 2026 Music Bot is Running!");
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Cecilium Music Bot</title>
+      <style>
+        body {
+          margin: 0;
+          height: 100vh;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          background: linear-gradient(135deg, #0f172a, #1e293b);
+          font-family: Arial, sans-serif;
+          color: white;
+          text-align: center;
+        }
+
+        .card {
+          padding: 30px 40px;
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.05);
+          box-shadow: 0 0 20px rgba(0,0,0,0.4);
+          backdrop-filter: blur(10px);
+        }
+
+        h1 {
+          font-size: 28px;
+          margin-bottom: 10px;
+        }
+
+        .emoji {
+          font-size: 40px;
+        }
+
+        .status {
+          color: #22c55e;
+          font-weight: bold;
+          margin-top: 10px;
+        }
+
+        .footer {
+          margin-top: 15px;
+          font-size: 12px;
+          opacity: 0.7;
+        }
+      </style>
+    </head>
+
+    <body>
+      <div class="card">
+        <div class="emoji">🎵</div>
+        <h1>Cecilium 2026 Music Bot</h1>
+        <div class="status">● ONLINE & RUNNING</div>
+        <div class="footer">Powered by Node.js • Telegram • Groq AI</div>
+      </div>
+    </body>
+    </html>
+  `);
 });
 
 const PORT = process.env.PORT || 3000;
@@ -48,26 +106,43 @@ function getAudioStream(videoUrl) {
   const ytdlp = spawn("./yt-dlp", [
     "--quiet",
     "--no-warnings",
-    // Use a standard User-Agent instead of --impersonate
-    "--user-agent",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+
+    // IMPORTANT FIX 🔥
+    "--extractor-args",
+    "youtube:player_client=android",
+
     "--no-cache-dir",
-    "-x",
-    "--audio-format",
-    "mp3",
-    "--audio-quality",
-    "0",
-    "--no-playlist",
+    "-f",
+    "bestaudio",
+
     "-o",
     "-",
+
     videoUrl,
   ]);
 
   const stream = new PassThrough();
-  ytdlp.stdout.pipe(stream);
+
+  let hasData = false;
+
+  ytdlp.stdout.on("data", (chunk) => {
+    hasData = true;
+    stream.write(chunk);
+  });
+
+  ytdlp.stdout.on("end", () => {
+    stream.end();
+  });
+
+  ytdlp.on("close", (code) => {
+    if (!hasData) {
+      console.error("❌ yt-dlp produced no data. Exit code:", code);
+      stream.destroy(new Error("Empty audio stream"));
+    }
+  });
 
   ytdlp.stderr.on("data", (data) => {
-    console.error(`yt-dlp Error: ${data.toString()}`);
+    console.error("yt-dlp:", data.toString());
   });
 
   return stream;
