@@ -106,15 +106,17 @@ function getAudioStream(videoUrl) {
     "--quiet",
     "--no-warnings",
 
-    // 🔥 FIX: USE COOKIES
+    // ✅ FIX: bypass bot detection
     "--cookies",
     "cookies.txt",
 
     "--extractor-args",
     "youtube:player_client=android,web,mweb,ios",
 
+    // ✅ FIX: stable format selection
     "-f",
-    "bestaudio",
+    "bestaudio[ext=m4a]/bestaudio/best",
+
     "-o",
     "-",
     videoUrl,
@@ -137,9 +139,11 @@ function getAudioStream(videoUrl) {
     }
   });
 
-  ytdlp.stderr.on("data", (d) => console.log("yt-dlp:", d.toString()));
+  ytdlp.stderr.on("data", (d) => {
+    console.log("yt-dlp:", d.toString());
+  });
 
-  return stream;
+  return { stream, hasData };
 }
 
 // ---------------- PARSERS ----------------
@@ -171,7 +175,7 @@ bot.on("message:text", async (ctx) => {
     const musicQuery = parseMusicCommand(text);
     const searchQuery = parseSearchCommand(text);
 
-    // ================= MUSIC =================
+    // ================= MUSIC MODE =================
     if (musicQuery) {
       const status = await ctx.reply("🔎 Searching...");
 
@@ -182,7 +186,7 @@ bot.on("message:text", async (ctx) => {
         return ctx.api.editMessageText(
           ctx.chat.id,
           status.message_id,
-          "❌ Not found",
+          "❌ No song found",
         );
       }
 
@@ -192,19 +196,16 @@ bot.on("message:text", async (ctx) => {
         "🎧 Downloading...",
       );
 
-      const stream = getAudioStream(video.url);
+      const { stream, hasData } = getAudioStream(video.url);
+
+      // ❌ FIX: prevent empty file crash
+      if (!hasData) {
+        return ctx.reply(
+          "❌ YouTube blocked this video or format unavailable.",
+        );
+      }
 
       await ctx.replyWithChatAction("upload_audio");
-
-      // 🔥 IMPORTANT FIX: prevent empty file send
-      let timeout = setTimeout(() => {
-        stream.destroy();
-      }, 15000);
-
-      stream.on("error", async () => {
-        clearTimeout(timeout);
-        await ctx.reply("❌ Failed to download audio.");
-      });
 
       await ctx.replyWithAudio(new InputFile(stream), {
         title: video.title,
@@ -212,14 +213,13 @@ bot.on("message:text", async (ctx) => {
         duration: video.seconds,
       });
 
-      clearTimeout(timeout);
       cleanupFiles();
 
       await ctx.api.deleteMessage(ctx.chat.id, status.message_id);
       return;
     }
 
-    // ================= SEARCH =================
+    // ================= SEARCH MODE =================
     if (searchQuery) {
       const result = await yts(searchQuery);
       const videos = result.videos.slice(0, 3);
