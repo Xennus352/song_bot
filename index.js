@@ -106,7 +106,10 @@ function getAudioStream(videoUrl) {
     "--quiet",
     "--no-warnings",
 
-    // 🔥 FIX FOR BOT DETECTION
+    // 🔥 FIX: USE COOKIES
+    "--cookies",
+    "cookies.txt",
+
     "--extractor-args",
     "youtube:player_client=android,web,mweb,ios",
 
