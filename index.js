@@ -48,21 +48,16 @@ function getAudioStream(videoUrl) {
   const ytdlp = spawn("./yt-dlp", [
     "--quiet",
     "--no-warnings",
-    // 1. IMPERSONATE A BROWSER (Crucial for 2026/Render)
-    "--impersonate",
-    "chrome",
-    // 2. BYPASS CACHE & USE SMALLER CHUNKS
+    // Use a standard User-Agent instead of --impersonate
+    "--user-agent",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "--no-cache-dir",
-    "--buffer-size",
-    "16K",
-    // 3. AUDIO SETTINGS
     "-x",
     "--audio-format",
     "mp3",
     "--audio-quality",
     "0",
     "--no-playlist",
-    // 4. OUTPUT TO STDOUT
     "-o",
     "-",
     videoUrl,
@@ -71,13 +66,8 @@ function getAudioStream(videoUrl) {
   const stream = new PassThrough();
   ytdlp.stdout.pipe(stream);
 
-  // LOG ERRORS (Check your Render logs to see why it fails)
   ytdlp.stderr.on("data", (data) => {
     console.error(`yt-dlp Error: ${data.toString()}`);
-  });
-
-  ytdlp.on("error", (err) => {
-    console.error("Failed to start yt-dlp:", err);
   });
 
   return stream;
