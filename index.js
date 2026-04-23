@@ -84,15 +84,14 @@ const groq = new OpenAI({
   baseURL: "https://api.groq.com/openai/v1",
 });
 
-// ---------------- CLEANUP FUNCTION ----------------
+// ---------------- CLEANUP ----------------
 function cleanupFiles() {
   fs.readdirSync(".").forEach((file) => {
     if (
       file.endsWith(".mp3") ||
       file.endsWith(".webm") ||
       file.endsWith(".m4a") ||
-      file.endsWith(".info.json") ||
-      file.endsWith(".html")
+      file.endsWith(".info.json")
     ) {
       try {
         fs.unlinkSync(file);
@@ -101,28 +100,24 @@ function cleanupFiles() {
   });
 }
 
-// ---------------- SAFE YT-DLP STREAM ----------------
+// ---------------- SAFE YT-DLP ----------------
 function getAudioStream(videoUrl) {
   const ytdlp = spawn("./yt-dlp", [
     "--quiet",
     "--no-warnings",
 
-    // IMPORTANT FIX 🔥
+    // 🔥 FIX FOR BOT DETECTION
     "--extractor-args",
-    "youtube:player_client=android",
+    "youtube:player_client=android,web",
 
-    "--no-cache-dir",
     "-f",
     "bestaudio",
-
     "-o",
     "-",
-
     videoUrl,
   ]);
 
   const stream = new PassThrough();
-
   let hasData = false;
 
   ytdlp.stdout.on("data", (chunk) => {
@@ -130,46 +125,38 @@ function getAudioStream(videoUrl) {
     stream.write(chunk);
   });
 
-  ytdlp.stdout.on("end", () => {
-    stream.end();
-  });
+  ytdlp.stdout.on("end", () => stream.end());
 
   ytdlp.on("close", (code) => {
     if (!hasData) {
-      console.error("❌ yt-dlp produced no data. Exit code:", code);
-      stream.destroy(new Error("Empty audio stream"));
+      console.error("❌ yt-dlp failed. Exit code:", code);
+      stream.destroy();
     }
   });
 
-  ytdlp.stderr.on("data", (data) => {
-    console.error("yt-dlp:", data.toString());
-  });
+  ytdlp.stderr.on("data", (d) => console.log("yt-dlp:", d.toString()));
 
   return stream;
 }
 
-// ---------------- COMMAND PARSERS ----------------
+// ---------------- PARSERS ----------------
 function parseMusicCommand(text) {
   const match = text.match(/cecilium\s+(play|download|music)\s+(.+)/i);
-  if (!match) return null;
-  return match[2];
+  return match ? match[2] : null;
 }
 
 function parseSearchCommand(text) {
   const match = text.match(/cecilium\s+search\s+(.+)/i);
-  if (!match) return null;
-  return match[1];
+  return match ? match[1] : null;
 }
 
-// ---------------- MOOD DETECTOR ----------------
+// ---------------- MOOD ----------------
 function detectMood(text) {
   const t = text.toLowerCase();
-
-  if (t.includes("happy") || t.includes("so happy")) return "happy";
+  if (t.includes("happy")) return "happy";
   if (t.includes("sad")) return "sad";
   if (t.includes("love")) return "romantic";
   if (t.includes("angry")) return "angry";
-
   return "neutral";
 }
 
@@ -181,9 +168,9 @@ bot.on("message:text", async (ctx) => {
     const musicQuery = parseMusicCommand(text);
     const searchQuery = parseSearchCommand(text);
 
-    // ================= MUSIC MODE =================
+    // ================= MUSIC =================
     if (musicQuery) {
-      const status = await ctx.reply("🔎 Searching song...");
+      const status = await ctx.reply("🔎 Searching...");
 
       const result = await yts(musicQuery);
       const video = result.videos?.[0];
@@ -192,47 +179,57 @@ bot.on("message:text", async (ctx) => {
         return ctx.api.editMessageText(
           ctx.chat.id,
           status.message_id,
-          "❌ No song found.",
+          "❌ Not found",
         );
       }
 
       await ctx.api.editMessageText(
         ctx.chat.id,
         status.message_id,
-        "🎧 Preparing audio...",
+        "🎧 Downloading...",
       );
 
-      const audioStream = getAudioStream(video.url);
+      const stream = getAudioStream(video.url);
 
       await ctx.replyWithChatAction("upload_audio");
 
-      await ctx.replyWithAudio(new InputFile(audioStream), {
+      // 🔥 IMPORTANT FIX: prevent empty file send
+      let timeout = setTimeout(() => {
+        stream.destroy();
+      }, 15000);
+
+      stream.on("error", async () => {
+        clearTimeout(timeout);
+        await ctx.reply("❌ Failed to download audio.");
+      });
+
+      await ctx.replyWithAudio(new InputFile(stream), {
         title: video.title,
         performer: video.author?.name || "Cecilium",
         duration: video.seconds,
       });
 
+      clearTimeout(timeout);
       cleanupFiles();
 
       await ctx.api.deleteMessage(ctx.chat.id, status.message_id);
       return;
     }
 
-    // ================= SEARCH MODE (FIXED) =================
+    // ================= SEARCH =================
     if (searchQuery) {
       const result = await yts(searchQuery);
-      const videos = result.videos?.slice(0, 3) || [];
+      const videos = result.videos.slice(0, 3);
 
-      if (!videos.length) {
-        return ctx.reply("❌ No results found.");
-      }
+      if (!videos.length) return ctx.reply("❌ No results");
 
-      const msg = videos.map((v, i) => `${i + 1}. ${v.title}`).join("\n");
-
-      return ctx.reply(`🔎 Search results:\n\n${msg}`);
+      return ctx.reply(
+        "🔎 Results:\n\n" +
+          videos.map((v, i) => `${i + 1}. ${v.title}`).join("\n"),
+      );
     }
 
-    // ================= CHAT / RECOMMEND MODE =================
+    // ================= AI CHAT =================
     const mood = detectMood(text);
 
     const response = await groq.chat.completions.create({
@@ -242,19 +239,7 @@ bot.on("message:text", async (ctx) => {
       messages: [
         {
           role: "system",
-          content: `
-You are Cecilium, a Telegram music assistant.
-
-RULES:
-- Reply clearly and simply
-- NEVER generate nonsense or poetic text
-- NEVER use broken Burmese
-- If user mood is detected, recommend 3–5 real songs
-- Keep answers structured and short
-- No extra storytelling
-
-User mood: ${mood}
-          `,
+          content: `You are Cecilium music bot. Mood: ${mood}`,
         },
         { role: "user", content: text },
       ],
@@ -263,10 +248,13 @@ User mood: ${mood}
     await ctx.reply(response.choices[0].message.content);
   } catch (err) {
     console.error("BOT ERROR:", err);
-    await ctx.reply("⚠️ Something went wrong. Try again.");
+    await ctx.reply("⚠️ Error occurred");
   }
 });
 
-// ---------------- START BOT ----------------
-bot.start();
-console.log("🤖 Cecilium bot is running...");
+// ---------------- FIX 409 ERROR ----------------
+bot.start({
+  drop_pending_updates: true,
+});
+
+console.log("🤖 Cecilium bot running...");
